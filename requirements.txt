@@ -1,2 +1,7 @@
 pyo3
-parking_lot
+aes-gcm-siv
+pqcrypto-kyber
+pqcrypto-dilithium
+blake3
+hkdf
+zeroize
