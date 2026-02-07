@@ -1,0 +1,12 @@
+[package]
+name = "titancore_free"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pyo3 = { version = "0.18.0", features = ["extension-module"] }
+parking_lot = "0.12"
+
+[lib]
+name = "titancore_free"
+crate-type = ["cdylib"]
