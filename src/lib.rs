@@ -1,8 +1,9 @@
 use pyo3::prelude::*;
-use pyo3::exceptions::{PyRuntimeError, PyPermissionError, PyValueError, PyIOError};
+use pyo3::exceptions::{PyRuntimeError, PyPermissionError, PyIOError};
 use aes_gcm_siv::{Aes256GcmSiv, Key, Nonce, aead::{Aead, KeyInit}};
 use pqcrypto_kyber::kyber1024;
 use pqcrypto_dilithium::dilithium5;
+use pqcrypto_traits::kem::{PublicKey as KEMPublicKey, Ciphertext as KEMCiphertext, SharedSecret as KEMSharedSecret};
 use sha2::Sha256;
 use hkdf::Hkdf;
 use zeroize::{Zeroize, Zeroizing};
@@ -13,7 +14,7 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use rand::Rng;
 
 // --- GLOBAL STATE ---
@@ -21,7 +22,9 @@ static AUDIT_CHAIN: Mutex<[u8;32]> = Mutex::new([0u8;32]);
 static OPERATION_CTR: AtomicU64 = AtomicU64::new(0);
 const RATE_LIMIT_WINDOW: u64 = 3;
 const MAX_BURST_REQUESTS: usize = 15;
-const KEY_PART_1: &[u8] = &[0xAB]; // dummy placeholder
+
+// --- PLACEHOLDER KEYS ---
+const KEY_PART_1: &[u8] = &[0xAB]; 
 const KEY_PART_2: &[u8] = &[0xCD];
 const KEY_PART_3: &[u8] = &[0xEF];
 
@@ -38,14 +41,14 @@ pub struct SovereignEngine {
 #[pymethods]
 impl SovereignEngine {
     #[new]
-    fn new(hw_info: String, seed: String, license_sig: String, log_path: String) -> PyResult<Self> {
+    fn new(hw_info: String, seed: String, _license_sig: String, log_path: String) -> PyResult<Self> {
         // Hardware fingerprint
         let mut hasher = blake3::Hasher::new();
         hasher.update(hw_info.as_bytes());
         hasher.update(seed.as_bytes());
         let fingerprint: [u8;32] = hasher.finalize().into();
 
-        // Dummy license verification (real PQC later)
+        // Dummy license verification
         let is_auth = true;
         if !is_auth {
             return Err(PyPermissionError::new_err("Authentication Failed"));
@@ -60,7 +63,7 @@ impl SovereignEngine {
     }
 
     pub fn vault_execute(&self, data: Vec<u8>, pk_bytes: Vec<u8>) -> PyResult<(Vec<u8>, Vec<u8>, String)> {
-        // Rate limit
+        // Rate limit check
         if self.check_rate_limit() {
             return Err(PyRuntimeError::new_err("Rate Limit Exceeded"));
         }
@@ -69,7 +72,7 @@ impl SovereignEngine {
 
         // PQC Key Encapsulation (Kyber)
         let pk = kyber1024::PublicKey::from_bytes(&pk_bytes)
-            .map_err(|_| PyValueError::new_err("Invalid PQC Key"))?;
+            .map_err(|_| PyRuntimeError::new_err("Invalid PQC Key"))?;
         let (pqc_ct, shared_secret) = kyber1024::encapsulate(&pk);
 
         // Derive AES session key using HKDF
